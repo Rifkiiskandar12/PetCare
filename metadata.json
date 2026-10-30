@@ -1,0 +1,6 @@
+{
+  "name": "PetCare Petshop",
+  "description": "Sistem informasi petshop modern dengan manajemen stok real-time, autentikasi pengguna, dan sistem pembayaran simulasi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
