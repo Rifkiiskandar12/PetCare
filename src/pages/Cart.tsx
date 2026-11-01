@@ -12,25 +12,27 @@ export default function Cart() {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-white p-12 rounded-[3rem] shadow-xl border border-gray-100 max-w-2xl mx-auto"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-12 md:p-20 rounded-[3.5rem] shadow-2xl shadow-orange-100/50 border border-gray-100 max-w-3xl mx-auto"
         >
-          <div className="bg-orange-100 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6">
-            <ShoppingBag className="h-10 w-10 text-orange-600" />
+          <div className="bg-orange-50 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 animate-bounce">
+            <ShoppingBag className="h-12 w-12 text-orange-600" />
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900 mb-4 tracking-tight">
-            Keranjang Anda Kosong
+          <h2 className="text-4xl font-extrabold text-gray-900 mb-6 tracking-tight">
+            Wah, Keranjang Anda <span className="text-orange-600">Masih Kosong!</span>
           </h2>
-          <p className="text-gray-500 mb-10 text-lg">
-            Sepertinya Anda belum memilih produk apapun untuk anabul kesayangan.
+          <p className="text-gray-500 mb-12 text-lg max-w-md mx-auto leading-relaxed">
+            Sepertinya Anda belum memilih produk apapun. Yuk, cari kebutuhan terbaik untuk anabul kesayangan Anda sekarang!
           </p>
-          <Button size="lg" className="rounded-full px-8">
-            <Link to="/shop" className="flex items-center">
-              <ArrowLeft className="mr-2 h-5 w-5" />
-              Mulai Belanja
-            </Link>
-          </Button>
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Button size="lg" className="rounded-full px-12 py-6 text-lg shadow-xl shadow-orange-200">
+              <Link to="/shop" className="flex items-center">
+                Mulai Belanja
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Link>
+            </Button>
+          </div>
         </motion.div>
       </div>
     );

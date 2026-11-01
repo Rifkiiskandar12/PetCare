@@ -248,27 +248,42 @@ function OrdersTab() {
   };
 
   const handleCancelOrder = async (orderId: string) => {
-    if (!confirm('Batalkan pesanan ini? Stok yang di-reservasi akan dilepaskan kembali ke gudang.')) return;
+    console.log('Admin attempting to cancel order:', orderId);
     try {
-      const { error } = await (supabase as any).rpc('cancel_pending_order', { p_order_id: orderId });
-      if (error) throw error;
+      const { data, error } = await (supabase as any).rpc('cancel_pending_order', { p_order_id: orderId });
+      
+      if (error) {
+        console.error('Admin cancellation RPC error:', error);
+        throw error;
+      }
+      
+      console.log('Admin cancellation result:', data);
       toast.success('Pesanan berhasil dibatalkan');
       fetchOrders();
     } catch (err: any) {
+      console.error('Admin cancellation catch error:', err);
       toast.error(err.message || 'Gagal membatalkan pesanan');
     }
   };
 
-  const handleShip = async (orderId: string) => {
-    const resi = prompt('Nomor Resi:');
-    if (!resi) return;
+  const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
+  const [resiValue, setResiValue] = useState('');
+  const [shippingLoading, setShippingLoading] = useState(false);
+
+  const handleShip = async () => {
+    if (!shippingOrderId || !resiValue) return;
+    setShippingLoading(true);
     try {
-      const { error } = await (supabase as any).rpc('ship_order', { p_order_id: orderId, p_tracking_number: resi });
+      const { error } = await (supabase as any).rpc('ship_order', { p_order_id: shippingOrderId, p_tracking_number: resiValue });
       if (error) throw error;
-      toast.success('Dikirim');
+      toast.success('Pesanan berhasil dikirim');
+      setShippingOrderId(null);
+      setResiValue('');
       fetchOrders();
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setShippingLoading(false);
     }
   };
 
@@ -327,7 +342,7 @@ function OrdersTab() {
                     {/* Shipping Action */}
                     {order.status === 'processing' && (
                       <button 
-                        onClick={() => handleShip(order.id)} 
+                        onClick={() => setShippingOrderId(order.id)} 
                         className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
                         title="Input Nomor Resi"
                       >
@@ -379,6 +394,27 @@ function OrdersTab() {
           </tbody>
         </table>
       </div>
+
+      {/* Shipping Modal */}
+      {shippingOrderId && (
+        <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-3xl max-w-sm w-full space-y-4">
+            <h3 className="font-bold text-lg">Input Nomor Resi</h3>
+            <p className="text-xs text-gray-500">Masukkan nomor resi pengiriman untuk pesanan ini.</p>
+            <input 
+              autoFocus
+              placeholder="Contoh: JNE123456789" 
+              value={resiValue} 
+              onChange={e => setResiValue(e.target.value)} 
+              className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" 
+            />
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setShippingOrderId(null); setResiValue(''); }}>Batal</Button>
+              <Button className="flex-1" onClick={handleShip} isLoading={shippingLoading}>Kirim</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -388,7 +424,7 @@ function ProductsTab() {
   const [categories, setCategories] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: '', sku: '', price: '', category_id: '', description: '', image_path: '' });
+  const [formData, setFormData] = useState({ name: '', sku: '', price: '', category_id: '', description: '', image_path: '', stock_on_hand: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -405,6 +441,12 @@ function ProductsTab() {
     const { data, error } = await supabase.from('products').select('*, categories(name)').order('name');
     if (!error) setProducts(data || []);
   }
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const [uploading, setUploading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -435,7 +477,12 @@ function ProductsTab() {
         finalImagePath = publicUrl;
       }
 
-      const p = { ...formData, price: Number(formData.price), image_path: finalImagePath };
+      const p = { 
+        ...formData, 
+        price: Number(formData.price), 
+        stock_on_hand: Number(formData.stock_on_hand),
+        image_path: finalImagePath 
+      };
       const { error } = editingId 
         ? await (supabase.from('products') as any).update(p).eq('id', editingId)
         : await (supabase.from('products') as any).insert([p]);
@@ -452,49 +499,78 @@ function ProductsTab() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Hapus?')) return;
-    const { error } = await supabase.from('products').delete().eq('id', id);
-    if (!error) { toast.success('Dihapus'); fetchProducts(); } else { toast.error('Gagal hapus'); }
-  };
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
-  const handleAdjustStock = async (id: string) => {
-    const d = prompt('Jumlah delta (gunakan negatif untuk mengurangi, misal -5):');
-    if (d === null) return;
-    const delta = Number(d);
-    if (isNaN(delta)) {
-      toast.error('Masukkan angka yang valid');
+  const handleDelete = async (id: string, currentlyActive: boolean) => {
+    if (!productToDelete || productToDelete !== id) {
+      setProductToDelete(id);
+      toast('Klik sampah sekali lagi untuk mengubah status aktif', { icon: '⚠️' });
+      setTimeout(() => setProductToDelete(null), 3000);
       return;
     }
+
+    const action = currentlyActive ? 'Nonaktifkan' : 'Aktifkan';
+    try {
+      const { error } = await (supabase.from('products') as any).update({ is_active: !currentlyActive }).eq('id', id);
+      if (error) throw error;
+      toast.success(`Produk berhasil di${action.toLowerCase()}`); 
+      setProductToDelete(null);
+      fetchProducts(); 
+    } catch (err: any) { 
+      toast.error(err.message || 'Gagal mengubah status produk'); 
+    }
+  };
+
+  const handleQuickAdjust = async (id: string, delta: number) => {
     try {
       const { error } = await (supabase as any).rpc('adjust_stock', { 
         p_product_id: id, 
         p_quantity_delta: delta, 
-        p_reason: 'Penyesuaian Manual Admin' 
+        p_reason: 'Quick Adjust Admin' 
       });
       if (error) throw error;
-      toast.success('Stok berhasil diperbarui'); 
       fetchProducts();
     } catch (err: any) {
-      toast.error(err.message || 'Gagal memperbarui stok');
+      toast.error(err.message);
     }
   };
 
   return (
     <div className="p-8">
-      <div className="flex justify-between mb-8">
+      <div className="flex flex-col md:flex-row justify-between mb-8 gap-4">
         <h2 className="text-2xl font-extrabold text-gray-900">Produk</h2>
-        <Button size="sm" onClick={() => { setEditingId(null); setFormData({ name: '', sku: '', price: '', category_id: '', description: '', image_path: '' }); setIsModalOpen(true); }}>Tambah</Button>
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input 
+              type="text" 
+              placeholder="Cari nama atau SKU..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none w-64"
+            />
+          </div>
+          <Button size="sm" onClick={() => { 
+            setEditingId(null); 
+            setFormData({ name: '', sku: '', price: '', category_id: '', description: '', image_path: '', stock_on_hand: '0' }); 
+            setIsModalOpen(true); 
+          }}>Tambah</Button>
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-4">
-        {products.map(p => (
-          <div key={p.id} className="p-4 bg-white border border-gray-100 rounded-2xl flex justify-between items-center group">
+        {filteredProducts.map(p => (
+          <div key={p.id} className={cn("p-4 bg-white border rounded-2xl flex justify-between items-center group transition-all", p.is_active ? "border-gray-100" : "border-red-100 bg-red-50/30")}>
             <div className="flex items-center space-x-4">
-              <div className="h-10 w-10 bg-gray-50 rounded-lg overflow-hidden shrink-0">{p.image_path && <img src={p.image_path} className="w-full h-full object-cover" />}</div>
+              <div className="h-10 w-10 bg-gray-50 rounded-lg overflow-hidden shrink-0 border border-gray-100">
+                {p.image_path ? <img src={p.image_path} className="w-full h-full object-cover" /> : <Package className="h-full w-full p-2 text-gray-300" />}
+              </div>
               <div>
-                <p className="font-bold text-sm">{p.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-sm">{p.name}</p>
+                  {!p.is_active && <span className="text-[8px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase tracking-tighter">Nonaktif</span>}
+                </div>
                 <div className="flex items-center space-x-2">
-                  <p className="text-[10px] text-gray-400">Stok: {p.stock_on_hand} (Res: {p.stock_reserved})</p>
+                  <p className="text-[10px] text-gray-400">SKU: {p.sku} | Stok: {p.stock_on_hand} (Res: {p.stock_reserved})</p>
                   {(p.stock_on_hand - p.stock_reserved) <= 5 && (p.stock_on_hand - p.stock_reserved) > 0 && (
                     <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-tighter">Low Stock</span>
                   )}
@@ -504,10 +580,56 @@ function ProductsTab() {
                 </div>
               </div>
             </div>
-            <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button onClick={() => handleAdjustStock(p.id)} className="p-1.5 text-orange-600 bg-orange-50 rounded-lg text-[10px] font-bold">STOK</button>
-              <button onClick={() => { setEditingId(p.id); setFormData({ name: p.name, sku: p.sku, price: p.price.toString(), category_id: p.category_id, description: p.description || '', image_path: p.image_path || '' }); setIsModalOpen(true); }} className="p-1.5 text-blue-600"><Edit className="h-4 w-4" /></button>
-              <button onClick={() => handleDelete(p.id)} className="p-1.5 text-red-600"><Trash2 className="h-4 w-4" /></button>
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+                <button 
+                  onClick={() => handleQuickAdjust(p.id, -1)}
+                  className="p-2 hover:bg-red-50 hover:text-red-600 transition-colors border-r border-gray-100"
+                >
+                  -
+                </button>
+                <div className="px-3 py-1 text-center min-w-[3rem]">
+                  <p className="text-[10px] font-bold text-gray-400 leading-none mb-1 uppercase tracking-tighter">Stock</p>
+                  <p className="text-sm font-black text-gray-900 leading-none">{p.stock_on_hand}</p>
+                </div>
+                <button 
+                  onClick={() => handleQuickAdjust(p.id, 1)}
+                  className="p-2 hover:bg-green-50 hover:text-green-600 transition-colors border-l border-gray-100"
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+                <button onClick={() => { 
+                  setEditingId(p.id); 
+                  setFormData({ 
+                    name: p.name, 
+                    sku: p.sku, 
+                    price: p.price.toString(), 
+                    category_id: p.category_id, 
+                    description: p.description || '', 
+                    image_path: p.image_path || '',
+                    stock_on_hand: p.stock_on_hand.toString()
+                  }); 
+                  setIsModalOpen(true); 
+                }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors">
+                  <Edit className="h-4 w-4" />
+                </button>
+                <button 
+                  onClick={() => handleDelete(p.id, p.is_active)} 
+                  className={cn(
+                    "p-2 rounded-xl transition-all", 
+                    productToDelete === p.id 
+                      ? "bg-red-600 text-white shadow-lg" 
+                      : p.is_active 
+                        ? "text-red-600 hover:bg-red-50" 
+                        : "text-green-600 hover:bg-green-50"
+                  )}
+                >
+                  {productToDelete === p.id ? <Trash2 className="h-4 w-4 animate-pulse" /> : p.is_active ? <Trash2 className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -515,17 +637,45 @@ function ProductsTab() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
           <form onSubmit={handleSave} className="bg-white p-8 rounded-3xl max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="font-bold text-xl">{editingId ? 'Edit' : 'Tambah'} Produk</h3>
             <div className="space-y-4">
-              <input required placeholder="Nama Produk" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
-              <div className="flex gap-4">
-                <input required placeholder="SKU" value={formData.sku} onChange={e => setFormData({ ...formData, sku: e.target.value })} className="w-1/2 p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
-                <input required type="number" placeholder="Harga" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} className="w-1/2 p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
+              <input required placeholder="Nama Produk" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none font-bold" />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ml-2">SKU Produk</label>
+                  <input required placeholder="Contoh: PET-001" value={formData.sku} onChange={e => setFormData({ ...formData, sku: e.target.value })} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ml-2">Harga (Rp)</label>
+                  <input required type="number" placeholder="Contoh: 50000" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
+                </div>
               </div>
-              <select required value={formData.category_id} onChange={e => setFormData({ ...formData, category_id: e.target.value })} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white">
-                <option value="">Pilih Kategori</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+
+              <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                <label className="block text-sm font-bold text-orange-900 mb-2 flex items-center">
+                  <Package className="h-4 w-4 mr-2" />
+                  Stok Awal
+                </label>
+                <input 
+                  required 
+                  type="number" 
+                  placeholder="Jumlah stok saat ini" 
+                  value={formData.stock_on_hand} 
+                  onChange={e => setFormData({ ...formData, stock_on_hand: e.target.value })} 
+                  className="w-full p-3 border border-orange-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white" 
+                />
+                <p className="mt-2 text-[10px] text-orange-600 italic leading-relaxed">
+                  * Masukkan jumlah stok fisik yang tersedia di gudang/toko Anda.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ml-2">Kategori</label>
+                <select required value={formData.category_id} onChange={e => setFormData({ ...formData, category_id: e.target.value })} className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white">
+                  <option value="">Pilih Kategori</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
               
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Foto Produk</label>
@@ -583,10 +733,25 @@ function CategoriesTab() {
     } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
   };
 
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus?')) return;
-    const { error } = await supabase.from('categories').delete().eq('id', id);
-    if (!error) fetchCategories(); else toast.error('Gagal: Masih ada produk di kategori ini.');
+    if (!categoryToDelete || categoryToDelete !== id) {
+      setCategoryToDelete(id);
+      toast('Klik sampah sekali lagi untuk menghapus permanen', { icon: '⚠️' });
+      setTimeout(() => setCategoryToDelete(null), 3000);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Kategori berhasil dihapus');
+      setCategoryToDelete(null);
+      fetchCategories();
+    } catch (err: any) {
+      toast.error('Gagal: Pastikan tidak ada produk yang menggunakan kategori ini.');
+    }
   };
 
   return (
@@ -601,7 +766,15 @@ function CategoriesTab() {
             <div><p className="font-bold">{c.name}</p><p className="text-[10px] text-gray-400">{c.is_active ? 'Aktif' : 'Nonaktif'}</p></div>
             <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onClick={() => { setEditingId(c.id); setFormData({ name: c.name, description: c.description || '' }); setIsModalOpen(true); }} className="p-1.5 text-blue-600"><Edit className="h-4 w-4" /></button>
-              <button onClick={() => handleDelete(c.id)} className="p-1.5 text-red-600"><Trash2 className="h-4 w-4" /></button>
+              <button 
+                onClick={() => handleDelete(c.id)} 
+                className={cn(
+                  "p-1.5 transition-all rounded-lg",
+                  categoryToDelete === c.id ? "bg-red-600 text-white shadow-lg" : "text-red-600 hover:bg-red-50"
+                )}
+              >
+                <Trash2 className={cn("h-4 w-4", categoryToDelete === c.id && "animate-pulse")} />
+              </button>
             </div>
           </div>
         ))}
@@ -629,6 +802,12 @@ function UsersTab() {
   useEffect(() => { fetchUsers(); }, []);
   async function fetchUsers() { const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }); setUsers(data || []); }
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const filteredUsers = users.filter(u => 
+    u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    u.phone?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const handleSetRole = async (userId: string, role: string, isActive: boolean) => {
     if (userId === currentUser?.id) { toast.error('Dilarang mengubah diri sendiri'); return; }
     const { error } = await (supabase as any).rpc('admin_set_user_access', { p_target_user_id: userId, p_role: role, p_is_active: isActive });
@@ -637,12 +816,24 @@ function UsersTab() {
 
   return (
     <div className="p-8">
-      <h2 className="text-2xl font-extrabold text-gray-900 mb-8">Pengguna</h2>
+      <div className="flex flex-col md:flex-row justify-between mb-8 gap-4">
+        <h2 className="text-2xl font-extrabold text-gray-900">Pengguna</h2>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input 
+            type="text" 
+            placeholder="Cari nama atau telepon..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none w-64"
+          />
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead><tr className="text-[10px] font-bold text-gray-400 uppercase border-b border-gray-50"><th className="pb-4 px-4">Nama</th><th className="pb-4 px-4">Peran</th><th className="pb-4 px-4">Status</th></tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {users.map(u => (
+            {filteredUsers.map(u => (
               <tr key={u.id} className="text-sm">
                 <td className="py-4 px-4 font-bold">{u.full_name || 'No Name'}</td>
                 <td className="py-4 px-4">

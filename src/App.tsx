@@ -19,6 +19,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import About from './pages/About';
 import FAQ from './pages/FAQ';
 import Contact from './pages/Contact';
+import TestScenarios from './pages/TestScenarios';
 
 function PrivateRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { user, profile, loading } = useAuth();
@@ -93,6 +94,15 @@ function AppContent() {
             element={
               <PrivateRoute roles={['admin', 'staff']}>
                 <AdminDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/test-scenarios"
+            element={
+              <PrivateRoute roles={['admin']}>
+                <TestScenarios />
               </PrivateRoute>
             }
           />

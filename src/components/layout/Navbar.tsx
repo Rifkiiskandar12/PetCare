@@ -69,10 +69,16 @@ export function Navbar() {
               <div className="flex items-center space-x-4">
                 <Link
                   to="/profile"
-                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-orange-600 transition-colors"
+                  className="flex items-center space-x-3 text-sm font-medium text-gray-700 hover:text-orange-600 transition-colors group"
                 >
-                  <User className="h-5 w-5" />
-                  <span>{profile?.full_name || 'Profil'}</span>
+                  <div className="h-8 w-8 rounded-full border border-gray-100 overflow-hidden bg-orange-50 flex items-center justify-center shadow-sm group-hover:border-orange-200 transition-all">
+                    {(profile as any)?.avatar_url ? (
+                      <img src={(profile as any).avatar_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="h-4 w-4 text-orange-600" />
+                    )}
+                  </div>
+                  <span className="hidden md:inline">{profile?.full_name || 'Profil'}</span>
                 </Link>
                 <button
                   onClick={() => signOut()}

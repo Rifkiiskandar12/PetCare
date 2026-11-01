@@ -7,7 +7,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 export default function AuthPage() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [view, setView] = useState<'login' | 'register' | 'reset'>('login');
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +25,7 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
-      if (isLogin) {
+      if (view === 'login') {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -33,7 +33,7 @@ export default function AuthPage() {
         if (error) throw error;
         toast.success('Berhasil masuk!');
         navigate('/');
-      } else {
+      } else if (view === 'register') {
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -45,7 +45,14 @@ export default function AuthPage() {
         });
         if (error) throw error;
         toast.success('Pendaftaran berhasil! Silakan cek email Anda atau silakan masuk.');
-        setIsLogin(true);
+        setView('login');
+      } else {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth?type=recovery`,
+        });
+        if (error) throw error;
+        toast.success('Instruksi reset password telah dikirim ke email Anda.');
+        setView('login');
       }
     } catch (error: any) {
       toast.error(error.message || 'Terjadi kesalahan');
@@ -62,18 +69,20 @@ export default function AuthPage() {
             <PawPrint className="h-8 w-8 text-orange-600" />
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
-            {isLogin ? 'Selamat Datang Kembali' : 'Buat Akun PetCare'}
+            {view === 'login' ? 'Selamat Datang Kembali' : view === 'register' ? 'Buat Akun PetCare' : 'Reset Kata Sandi'}
           </h2>
           <p className="mt-2 text-sm text-gray-500">
-            {isLogin
-              ? 'Masuk untuk mengelola pesanan anabul Anda'
-              : 'Bergabunglah dengan komunitas pecinta hewan kami'}
+            {view === 'login' 
+              ? 'Masuk untuk mengelola pesanan anabul Anda' 
+              : view === 'register'
+                ? 'Bergabunglah dengan komunitas pecinta hewan kami'
+                : 'Masukkan email Anda untuk menerima tautan reset'}
           </p>
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4">
-            {!isLogin && (
+            {view === 'register' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
                 <div className="relative">
@@ -109,22 +118,35 @@ export default function AuthPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Kata Sandi</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400" />
+            {view !== 'reset' && (
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Kata Sandi</label>
+                  {view === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => setView('reset')}
+                      className="text-xs font-medium text-orange-600 hover:text-orange-500"
+                    >
+                      Lupa kata sandi?
+                    </button>
+                  )}
                 </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 sm:text-sm transition-all"
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 sm:text-sm transition-all"
+                    placeholder="••••••••"
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div>
@@ -133,7 +155,7 @@ export default function AuthPage() {
               className="w-full py-3"
               isLoading={loading}
             >
-              {isLogin ? 'Masuk' : 'Daftar'}
+              {view === 'login' ? 'Masuk' : view === 'register' ? 'Daftar' : 'Kirim Tautan Reset'}
               {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
             </Button>
           </div>
@@ -141,10 +163,10 @@ export default function AuthPage() {
 
         <div className="text-center">
           <button
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => setView(view === 'login' ? 'register' : 'login')}
             className="text-sm font-medium text-orange-600 hover:text-orange-500 transition-colors"
           >
-            {isLogin
+            {view === 'login'
               ? 'Belum punya akun? Daftar sekarang'
               : 'Sudah punya akun? Masuk di sini'}
           </button>

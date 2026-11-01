@@ -69,13 +69,25 @@ export default function Profile() {
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl overflow-hidden relative">
             <div className="relative z-10">
-              <div className="h-20 w-20 bg-orange-100 rounded-2xl flex items-center justify-center mb-4">
-                <span className="text-2xl font-bold text-orange-600">
-                  {profile?.full_name?.charAt(0) || user?.email?.charAt(0)}
-                </span>
+              <div className="h-20 w-20 rounded-2xl border-2 border-orange-50 overflow-hidden bg-gray-100 mb-4 shadow-sm">
+                {(profile as any)?.avatar_url ? (
+                  <img src={(profile as any).avatar_url} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-orange-100">
+                    <span className="text-2xl font-bold text-orange-600">
+                      {profile?.full_name?.charAt(0) || user?.email?.charAt(0)}
+                    </span>
+                  </div>
+                )}
               </div>
               <h3 className="text-lg font-bold text-gray-900">{profile?.full_name || 'Tanpa Nama'}</h3>
-              <p className="text-sm text-gray-500 mb-4">{user?.email}</p>
+              <p className="text-sm text-gray-500 mb-2">{user?.email}</p>
+              {profile?.phone && (
+                <p className="text-xs text-gray-400 mb-4 flex items-center">
+                  <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full mr-2" />
+                  {profile.phone}
+                </p>
+              )}
               <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 capitalize">
                 {profile?.role}
               </div>

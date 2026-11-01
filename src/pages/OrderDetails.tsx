@@ -61,6 +61,7 @@ export default function OrderDetails() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     if (user && orderId) {
@@ -141,19 +142,34 @@ export default function OrderDetails() {
     }
   };
 
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
   const handleCancelOrder = async () => {
     if (!orderId) return;
-    if (!confirm('Apakah Anda yakin ingin membatalkan pesanan ini?')) return;
+    
+    if (!showCancelConfirm) {
+      setShowCancelConfirm(true);
+      toast('Klik tombol sekali lagi untuk mengonfirmasi pembatalan', { icon: '⚠️' });
+      setTimeout(() => setShowCancelConfirm(false), 3000); // Reset after 3s
+      return;
+    }
 
+    setCancelling(true);
     try {
-      const { error } = await (supabase as any).rpc('cancel_pending_order', {
+      const { data, error } = await (supabase as any).rpc('cancel_pending_order', {
         p_order_id: orderId,
       });
+      
       if (error) throw error;
+      
       toast.success('Pesanan berhasil dibatalkan');
-      fetchOrderDetails();
+      setShowCancelConfirm(false);
+      await fetchOrderDetails();
     } catch (err: any) {
+      console.error('Cancellation error:', err);
       toast.error(err.message || 'Gagal membatalkan pesanan');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -219,8 +235,13 @@ export default function OrderDetails() {
             </div>
             
             {isPending && !isAwaitingVerification && (
-              <Button variant="danger" size="sm" onClick={handleCancelOrder}>
-                Batalkan Pesanan
+              <Button 
+                variant={showCancelConfirm ? "primary" : "danger"} 
+                size="sm" 
+                onClick={handleCancelOrder}
+                isLoading={cancelling}
+              >
+                {showCancelConfirm ? "Klik Lagi untuk Batal" : "Batalkan Pesanan"}
               </Button>
             )}
             {order.status === 'shipped' && (

@@ -14,6 +14,7 @@ export type Database = {
           id: string
           full_name: string
           phone: string | null
+          avatar_url: string | null
           role: 'customer' | 'staff' | 'admin'
           is_active: boolean
           created_at: string
@@ -23,6 +24,7 @@ export type Database = {
           id: string
           full_name?: string
           phone?: string | null
+          avatar_url?: string | null
           role?: 'customer' | 'staff' | 'admin'
           is_active?: boolean
           created_at?: string
@@ -32,6 +34,7 @@ export type Database = {
           id?: string
           full_name?: string
           phone?: string | null
+          avatar_url?: string | null
           role?: 'customer' | 'staff' | 'admin'
           is_active?: boolean
           created_at?: string
