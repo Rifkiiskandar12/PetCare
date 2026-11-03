@@ -12,3 +12,6 @@ export const supabase = createClient<Database>(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder'
 );
+
+// Tambahkan baris ini untuk testing di konsol:
+(window as any).supabase = supabase;

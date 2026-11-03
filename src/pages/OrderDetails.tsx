@@ -6,8 +6,29 @@ import { Database } from '../types/database';
 import { Button } from '../components/ui/Button';
 import { 
   ArrowLeft, Clock, CheckCircle2, Truck, XCircle, Package, 
-  MapPin, Phone, CreditCard, Upload, AlertTriangle, FileText
+  MapPin, Phone, CreditCard, Upload, AlertTriangle, FileText, Info, Image as ImageIcon
 } from 'lucide-react';
+
+function ProofThumbnail({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function getUrl() {
+      try {
+        const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(path, 3600);
+        if (error) throw error;
+        setUrl(data.signedUrl);
+      } catch (err) {
+        console.error('Error fetching proof thumbnail:', err);
+      }
+    }
+    getUrl();
+  }, [path]);
+
+  if (!url) return <div className="w-full h-full flex items-center justify-center bg-gray-50"><ImageIcon className="h-4 w-4 text-gray-300" /></div>;
+  return <img src={url} className="w-full h-full object-cover" />;
+}
+
 import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
 import { motion } from 'motion/react';
@@ -192,8 +213,8 @@ export default function OrderDetails() {
 
   const latestPayment = payments[0];
   const isPending = order.status === 'pending_payment';
-  const canUpload = isPending && (!latestPayment || latestPayment.status === 'not_submitted' || latestPayment.status === 'rejected');
   const isAwaitingVerification = latestPayment?.status === 'pending_verification';
+  const canUpload = isPending && (!latestPayment || latestPayment.status === 'not_submitted' || latestPayment.status === 'rejected' || isAwaitingVerification);
 
   const paymentStatusLabels: Record<string, string> = {
     not_submitted: 'Belum diunggah',
@@ -306,29 +327,67 @@ export default function OrderDetails() {
 
                   {canUpload ? (
                     <div className="space-y-4">
-                      <p className="text-xs text-orange-700 leading-relaxed italic">
-                        * Silakan transfer Rp {order.total.toLocaleString('id-ID')} ke rekening simulasi kami dan unggah bukti transfer.
-                      </p>
-                      <label className="block">
-                        <span className="sr-only">Pilih file</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleFileUpload}
-                          disabled={uploading}
-                          className="block w-full text-sm text-orange-700 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-600 file:text-white hover:file:bg-orange-700 cursor-pointer"
-                        />
-                      </label>
-                      {uploading && <p className="text-xs text-orange-600 animate-pulse font-bold">Mengunggah bukti...</p>}
-                    </div>
-                  ) : isAwaitingVerification ? (
-                    <div className="p-4 bg-white/50 rounded-xl border border-orange-200 flex items-center space-x-3">
-                      <Clock className="h-5 w-5 text-orange-500" />
-                      <span className="text-xs text-orange-800 font-medium leading-relaxed">
-                        Bukti sudah diunggah. Mohon tunggu tim kami melakukan verifikasi manual.
-                      </span>
+                      {isAwaitingVerification ? (
+                        <div className="p-3 bg-orange-100/50 rounded-xl border border-orange-200 flex flex-col space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Info className="h-4 w-4 text-orange-600" />
+                            <p className="text-[10px] text-orange-800 font-bold uppercase tracking-tighter">
+                              Bukti sedang diverifikasi.
+                            </p>
+                          </div>
+                          
+                          {latestPayment?.proof_path && (
+                            <div className="flex items-center space-x-3 bg-white p-2 rounded-xl border border-orange-100">
+                              <div className="h-10 w-10 rounded-lg overflow-hidden bg-gray-50 border shrink-0">
+                                <ProofThumbnail path={latestPayment.proof_path} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[8px] text-gray-400 uppercase font-bold tracking-widest">File Terunggah</p>
+                                <p className="text-[10px] text-gray-600 truncate font-mono">
+                                  {latestPayment.proof_path.split('/').pop()}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <p className="text-[9px] text-orange-700 italic">
+                            * Anda masih bisa menggantinya jika salah unggah.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-orange-700 leading-relaxed italic">
+                          * Silakan transfer Rp {order.total.toLocaleString('id-ID')} ke rekening simulasi kami dan unggah bukti transfer.
+                        </p>
+                      )}
+                      
+                      <div className="relative">
+                        <label className="block">
+                          <span className="sr-only">Pilih file</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleFileUpload}
+                            disabled={uploading}
+                            className="block w-full text-xs text-orange-700 
+                              file:mr-4 file:py-2.5 file:px-6 
+                              file:rounded-full file:border-0 
+                              file:text-xs file:font-black
+                              file:bg-orange-600 file:text-white 
+                              hover:file:bg-orange-700 
+                              file:transition-all cursor-pointer
+                              file:shadow-lg file:shadow-orange-200"
+                          />
+                        </label>
+                      </div>
+                      {uploading && (
+                        <div className="flex items-center space-x-2 text-orange-600 animate-pulse">
+                          <div className="h-2 w-2 bg-orange-600 rounded-full animate-bounce" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">Sedang mengunggah...</p>
+                        </div>
+                      )}
                     </div>
                   ) : latestPayment?.status === 'approved' && (
+
                     <div className="p-4 bg-green-100 rounded-xl flex items-center space-x-3">
                       <CheckCircle2 className="h-5 w-5 text-green-600" />
                       <span className="text-xs text-green-800 font-bold">Pembayaran telah terverifikasi.</span>

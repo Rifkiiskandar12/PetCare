@@ -77,6 +77,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      // Get product stock info
+      const { data: product } = await supabase
+        .from('products')
+        .select('stock_on_hand, stock_reserved')
+        .eq('id', productId)
+        .single();
+      
+      if (!product) throw new Error('Produk tidak ditemukan');
+      const available = (product as any).stock_on_hand - (product as any).stock_reserved;
+
       // Get cart ID
       const { data: cart } = await (supabase
         .from('carts') as any)
@@ -90,8 +100,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const existingItem = items.find((item) => item.product_id === productId);
 
       if (existingItem) {
-        await updateQuantity(existingItem.id, existingItem.quantity + quantity);
+        const newTotalQty = existingItem.quantity + quantity;
+        if (newTotalQty > available) {
+          toast.error(`Maaf, stok tidak mencukupi (Tersedia: ${available})`);
+          return;
+        }
+        await updateQuantity(existingItem.id, newTotalQty);
       } else {
+        if (quantity > available) {
+          toast.error(`Maaf, stok tidak mencukupi (Tersedia: ${available})`);
+          return;
+        }
         const { error } = await (supabase
           .from('cart_items') as any)
           .insert({
@@ -104,7 +123,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         toast.success('Berhasil ditambahkan ke keranjang');
       }
     } catch (err: any) {
-      toast.error('Gagal menambahkan ke keranjang');
+      toast.error(err.message || 'Gagal menambahkan ke keranjang');
     }
   };
 
@@ -115,6 +134,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      const item = items.find(i => i.id === itemId);
+      if (item) {
+        const available = item.products.stock_on_hand - item.products.stock_reserved;
+        if (quantity > available) {
+          toast.error(`Maaf, stok tidak mencukupi (Tersedia: ${available})`);
+          return;
+        }
+      }
+
       const { error } = await (supabase
         .from('cart_items') as any)
         .update({ quantity })

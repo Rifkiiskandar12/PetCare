@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { 
   LayoutDashboard, ShoppingBag, Package, FolderTree, Users, 
   ChevronRight, Check, X, Truck, AlertCircle, Search, ExternalLink,
-  Edit, Trash2, Calendar, FileText, TrendingUp, Clock
+  Edit, Trash2, Calendar, FileText, TrendingUp, Clock, ArrowRight, RotateCcw
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -221,6 +221,7 @@ function OrdersTab() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [orderFilter, setOrderFilter] = useState<'active' | 'history' | 'all'>('active');
 
   useEffect(() => {
     fetchOrders();
@@ -229,21 +230,51 @@ function OrdersTab() {
   async function fetchOrders() {
     setLoading(true);
     let query = supabase.from('orders').select('*, profiles(full_name), payments(*)').order('created_at', { ascending: false });
+    
     if (dateRange.start) query = query.gte('created_at', startOfDay(new Date(dateRange.start)).toISOString());
     if (dateRange.end) query = query.lte('created_at', endOfDay(new Date(dateRange.end)).toISOString());
+    
+    if (orderFilter === 'active') {
+      query = query.in('status', ['pending_payment', 'processing', 'shipped']);
+    } else if (orderFilter === 'history') {
+      query = query.in('status', ['completed', 'cancelled']);
+    }
+
     const { data, error } = await query;
     if (!error) setOrders(data || []);
     setLoading(false);
   }
 
-  const handleVerify = async (paymentId: string, approve: boolean) => {
+  useEffect(() => {
+    fetchOrders();
+  }, [orderFilter]);
+
+  const [rejectPaymentId, setRejectPaymentId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectingLoading, setRejectingLoading] = useState(false);
+
+  const handleVerify = async (paymentId: string, approve: boolean, reason?: string) => {
+    if (!approve && !reason) {
+      setRejectPaymentId(paymentId);
+      return;
+    }
+
     try {
-      const { error } = await (supabase as any).rpc('verify_simulated_payment', { p_payment_id: paymentId, p_approve: approve, p_rejection_reason: approve ? null : 'Bukti pembayaran tidak valid.' });
+      if (!approve) setRejectingLoading(true);
+      const { error } = await (supabase as any).rpc('verify_simulated_payment', { 
+        p_payment_id: paymentId, 
+        p_approve: approve, 
+        p_rejection_reason: approve ? null : (reason || 'Bukti pembayaran tidak valid.') 
+      });
       if (error) throw error;
       toast.success(approve ? 'Pembayaran disetujui' : 'Pembayaran ditolak');
+      setRejectPaymentId(null);
+      setRejectionReason('');
       fetchOrders();
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setRejectingLoading(false);
     }
   };
 
@@ -263,6 +294,17 @@ function OrdersTab() {
     } catch (err: any) {
       console.error('Admin cancellation catch error:', err);
       toast.error(err.message || 'Gagal membatalkan pesanan');
+    }
+  };
+
+  const handleCompleteOrder = async (orderId: string) => {
+    try {
+      const { error } = await (supabase as any).rpc('confirm_order_received', { p_order_id: orderId });
+      if (error) throw error;
+      toast.success('Pesanan berhasil diselesaikan');
+      fetchOrders();
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menyelesaikan pesanan');
     }
   };
 
@@ -289,7 +331,7 @@ function OrdersTab() {
 
   const viewProof = async (path: string) => {
     try {
-      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(path, 60);
+      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(path, 3600);
       if (error) throw error;
       window.open(data.signedUrl, '_blank');
     } catch (err: any) {
@@ -300,8 +342,39 @@ function OrdersTab() {
   return (
     <div className="p-8">
       <div className="flex flex-col md:flex-row justify-between mb-8 gap-4">
-        <h2 className="text-2xl font-extrabold text-gray-900">Kelola Pesanan</h2>
-        <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-xl border border-gray-100 text-xs">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-extrabold text-gray-900">Kelola Pesanan</h2>
+          <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
+            <button 
+              onClick={() => setOrderFilter('active')}
+              className={cn(
+                "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                orderFilter === 'active' ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              Aktif
+            </button>
+            <button 
+              onClick={() => setOrderFilter('history')}
+              className={cn(
+                "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                orderFilter === 'history' ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              Riwayat
+            </button>
+            <button 
+              onClick={() => setOrderFilter('all')}
+              className={cn(
+                "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                orderFilter === 'all' ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              Semua
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-xl border border-gray-100 text-xs self-end">
           <Calendar className="h-3 w-3 text-gray-400" />
           <input type="date" value={dateRange.start} onChange={(e) => setDateRange(p => ({ ...p, start: e.target.value }))} className="bg-transparent outline-none" />
           <span>-</span>
@@ -350,6 +423,17 @@ function OrdersTab() {
                       </button>
                     )}
 
+                    {/* Completion Action */}
+                    {order.status === 'shipped' && (
+                      <button 
+                        onClick={() => handleCompleteOrder(order.id)} 
+                        className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
+                        title="Selesaikan Pesanan"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                    )}
+
                     {/* Payment Verification Actions */}
                     {order.payments?.some((p: any) => p.status === 'pending_verification') && (
                       <>
@@ -394,6 +478,39 @@ function OrdersTab() {
           </tbody>
         </table>
       </div>
+
+      {/* Rejection Modal */}
+      {rejectPaymentId && (
+        <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-3xl max-w-sm w-full space-y-4">
+            <div className="flex items-center space-x-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              <h3 className="font-bold text-lg">Tolak Pembayaran</h3>
+            </div>
+            <p className="text-xs text-gray-500 font-medium">Berikan alasan penolakan agar pelanggan dapat memperbaikinya.</p>
+            <textarea 
+              autoFocus
+              placeholder="Contoh: Bukti transfer tidak terbaca atau nominal tidak sesuai." 
+              value={rejectionReason} 
+              onChange={e => setRejectionReason(e.target.value)} 
+              className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-sm"
+              rows={3}
+            />
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setRejectPaymentId(null); setRejectionReason(''); }}>Batal</Button>
+              <Button 
+                variant="danger" 
+                className="flex-1" 
+                onClick={() => handleVerify(rejectPaymentId, false, rejectionReason)} 
+                isLoading={rejectingLoading}
+                disabled={!rejectionReason.trim()}
+              >
+                Tolak
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Shipping Modal */}
       {shippingOrderId && (
@@ -501,23 +618,34 @@ function ProductsTab() {
 
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
-  const handleDelete = async (id: string, currentlyActive: boolean) => {
-    if (!productToDelete || productToDelete !== id) {
-      setProductToDelete(id);
-      toast('Klik sampah sekali lagi untuk mengubah status aktif', { icon: '⚠️' });
-      setTimeout(() => setProductToDelete(null), 3000);
-      return;
-    }
-
+  const handleToggleActive = async (id: string, currentlyActive: boolean) => {
     const action = currentlyActive ? 'Nonaktifkan' : 'Aktifkan';
     try {
       const { error } = await (supabase.from('products') as any).update({ is_active: !currentlyActive }).eq('id', id);
       if (error) throw error;
       toast.success(`Produk berhasil di${action.toLowerCase()}`); 
-      setProductToDelete(null);
       fetchProducts(); 
     } catch (err: any) { 
       toast.error(err.message || 'Gagal mengubah status produk'); 
+    }
+  };
+
+  const handlePermanentDelete = async (id: string) => {
+    if (!productToDelete || productToDelete !== id) {
+      setProductToDelete(id);
+      toast('Klik sampah sekali lagi untuk MENGHAPUS PERMANEN', { icon: '🚨' });
+      setTimeout(() => setProductToDelete(null), 3000);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Produk dihapus permanen');
+      setProductToDelete(null);
+      fetchProducts();
+    } catch (err: any) {
+      toast.error('Gagal: Produk ini sudah pernah dipesan (punya riwayat transaksi). Gunakan fitur Nonaktif saja.');
     }
   };
 
@@ -616,19 +744,38 @@ function ProductsTab() {
                 }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors">
                   <Edit className="h-4 w-4" />
                 </button>
-                <button 
-                  onClick={() => handleDelete(p.id, p.is_active)} 
-                  className={cn(
-                    "p-2 rounded-xl transition-all", 
-                    productToDelete === p.id 
-                      ? "bg-red-600 text-white shadow-lg" 
-                      : p.is_active 
-                        ? "text-red-600 hover:bg-red-50" 
-                        : "text-green-600 hover:bg-green-50"
+                <div className="flex space-x-1">
+                  {p.is_active ? (
+                    <button 
+                      onClick={() => handleToggleActive(p.id, true)} 
+                      className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
+                      title="Nonaktifkan Produk"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => handleToggleActive(p.id, false)} 
+                      className="p-2 text-green-600 hover:bg-green-50 rounded-xl transition-all"
+                      title="Aktifkan Produk"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
                   )}
-                >
-                  {productToDelete === p.id ? <Trash2 className="h-4 w-4 animate-pulse" /> : p.is_active ? <Trash2 className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                </button>
+                  
+                  <button 
+                    onClick={() => handlePermanentDelete(p.id)} 
+                    className={cn(
+                      "p-2 rounded-xl transition-all", 
+                      productToDelete === p.id 
+                        ? "bg-red-600 text-white shadow-lg" 
+                        : "text-red-600 hover:bg-red-50"
+                    )}
+                    title="Hapus Permanen"
+                  >
+                    <Trash2 className={cn("h-4 w-4", productToDelete === p.id && "animate-pulse")} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -854,36 +1001,88 @@ function UsersTab() {
 function AuditLogsTab() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  
   useEffect(() => { fetchLogs(); }, []);
-  async function fetchLogs() { const { data } = await supabase.from('audit_logs').select('*, profiles(full_name)').order('created_at', { ascending: false }).limit(30); setLogs(data || []); setLoading(false); }
+  async function fetchLogs() { 
+    const { data } = await supabase.from('audit_logs').select('*, profiles(full_name)').order('created_at', { ascending: false }).limit(50); 
+    setLogs(data || []); 
+    setLoading(false); 
+  }
 
   return (
     <div className="p-8">
-      <h2 className="text-2xl font-extrabold text-gray-900 mb-8">Audit Log</h2>
-      <div className="space-y-3">
+      <div className="flex justify-between items-center mb-8">
+        <h2 className="text-2xl font-extrabold text-gray-900">Audit Log</h2>
+        <Button variant="ghost" size="sm" onClick={fetchLogs}><RotateCcw className="h-4 w-4 mr-2" /> Refresh</Button>
+      </div>
+      <div className="space-y-4">
         {loading ? (
           [...Array(5)].map((_, i) => (
             <Skeleton key={i} className="h-20 w-full rounded-2xl" />
           ))
         ) : logs.map(log => (
-          <div key={log.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-xs">
-            <div className="flex justify-between font-bold mb-1">
-              <span className={cn(
-                "px-2 py-0.5 rounded-md",
-                log.action.includes('delete') ? "bg-red-100 text-red-600" : 
-                log.action.includes('update') ? "bg-blue-100 text-blue-600" :
-                "bg-green-100 text-green-600"
-              )}>
-                {log.action.toUpperCase()}
-              </span>
-              <span className="text-gray-400">{format(new Date(log.created_at), 'HH:mm dd/MM/yy')}</span>
+          <div key={log.id} className="bg-gray-50 rounded-3xl border border-gray-100 overflow-hidden transition-all hover:shadow-md">
+            <div 
+              className="p-5 flex justify-between items-center cursor-pointer"
+              onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
+            >
+              <div className="flex items-center space-x-4">
+                <span className={cn(
+                  "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm",
+                  log.action.includes('delete') ? "bg-red-500 text-white" : 
+                  log.action.includes('update') ? "bg-blue-500 text-white" :
+                  "bg-green-500 text-white"
+                )}>
+                  {log.action.replace('_', ' ')}
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">
+                    {log.profiles?.full_name || 'System'}
+                  </p>
+                  <p className="text-[10px] text-gray-400 font-medium">
+                    Entitas: <span className="text-orange-600 uppercase tracking-tighter">{log.entity_type}</span> • {format(new Date(log.created_at), 'HH:mm dd/MM/yy')}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className={cn("h-5 w-5 text-gray-300 transition-transform", expandedLog === log.id && "rotate-90")} />
             </div>
-            <p className="text-gray-700 font-medium mb-1">
-              Aktor: {log.profiles?.full_name || 'System'} | Entitas: <span className="font-bold">{log.entity_type}</span>
-            </p>
-            {log.metadata && Object.keys(log.metadata as object).length > 0 && (
-              <div className="mt-2 p-2 bg-white rounded-lg border border-gray-100 font-mono text-[10px] text-gray-500 overflow-x-auto">
-                <pre>{JSON.stringify(log.metadata, null, 2)}</pre>
+
+            {expandedLog === log.id && log.metadata && Object.keys(log.metadata as object).length > 0 && (
+              <div className="px-5 pb-5 pt-0">
+                <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-inner">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Data Teknis</p>
+                      <pre className="font-mono text-[10px] text-gray-500 bg-gray-50 p-3 rounded-xl overflow-x-auto whitespace-pre-wrap">
+                        {JSON.stringify(log.metadata, (k, v) => ['before', 'after'].includes(k) ? undefined : v, 2)}
+                      </pre>
+                    </div>
+                    {(log.metadata as any).before !== undefined && (
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Riwayat Perubahan</p>
+                        <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-dashed border-gray-200">
+                          <div className="text-center flex-1">
+                            <p className="text-[8px] text-gray-400 uppercase mb-1">Sebelum</p>
+                            <span className="text-lg font-black text-red-500">{(log.metadata as any).before}</span>
+                          </div>
+                          <div className="px-4">
+                            <ArrowRight className="h-5 w-5 text-gray-300" />
+                          </div>
+                          <div className="text-center flex-1">
+                            <p className="text-[8px] text-gray-400 uppercase mb-1">Sesudah</p>
+                            <span className="text-lg font-black text-green-500">{(log.metadata as any).after}</span>
+                          </div>
+                        </div>
+                        {(log.metadata as any).reason && (
+                          <p className="mt-3 text-[10px] text-gray-500 italic">
+                            Alasan: {(log.metadata as any).reason}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
